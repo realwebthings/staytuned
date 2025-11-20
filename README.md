@@ -6,15 +6,15 @@ Extract instrumental tracks from songs, videos, and audio files from local sourc
 
 ```bash
 # Install dependencies
-python3 quick_install.py
+pip install -r requirements.txt
 
 # Web Interface (Recommended)
-python3 web_app.py
+python3 simple_web_app.py
 # Then open http://localhost:8000
 
 # Command Line
-python3 extract.py -i song.mp3 -o ./output
-python3 extract.py -u "https://youtube.com/watch?v=..." -o ./output
+python3 ai_extractor.py -i song.mp3 -o ./output
+python3 ai_extractor.py -u "https://youtube.com/watch?v=..." -o ./output
 ```
 
 ## Features
@@ -28,40 +28,32 @@ python3 extract.py -u "https://youtube.com/watch?v=..." -o ./output
 
 ## Installation
 
-### Option 1: Quick Install
-```bash
-python3 quick_install.py
-```
-
-### Option 2: Manual Install
 ```bash
 pip install -r requirements.txt
 
-# Install FFmpeg
+# Install FFmpeg (required for audio processing)
 # macOS: brew install ffmpeg
 # Ubuntu: sudo apt install ffmpeg
+# Windows: Download from https://ffmpeg.org
 ```
 
 ## Usage Examples
 
 ```bash
-# Basic extraction
-python3 extract.py -i "song.mp3" -o "./output"
+# Basic AI separation
+python3 ai_extractor.py -i "song.mp3" -o "./output"
 
-# From YouTube with high vocal reduction
-python3 extract.py -u "https://youtube.com/watch?v=..." -o "./output" -v 0.9
-
-# Custom frequency range (remove low bass, keep highs)
-python3 extract.py -i "song.mp3" -o "./output" -f "100,6000"
-
-# Maximum vocal removal
-python3 extract.py -i "song.mp3" -o "./output" -v 1.0 -f "80,8000"
+# From YouTube
+python3 ai_extractor.py -u "https://youtube.com/watch?v=..." -o "./output"
 
 # Extract 30 seconds starting from 1 minute
-python3 extract.py -i "song.mp3" -o "./output" -s 60 -d 30
+python3 ai_extractor.py -i "song.mp3" -o "./output" -s 60 -d 30
 
-# Batch processing with settings
-python3 extract.py -b "./music_folder" -o "./output" -v 0.85
+# Batch processing
+python3 ai_extractor.py -b "./music_folder" -o "./output"
+
+# Different AI models
+python3 ai_extractor.py -i "song.mp3" -o "./output" -m htdemucs_ft
 ```
 
 ## Output Files
