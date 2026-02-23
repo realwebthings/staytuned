@@ -27,7 +27,10 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
 
 document.getElementById('urlForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    
     const url = document.getElementById('youtubeUrl').value;
+    const downloadAudio = document.getElementById('downloadAudio').checked;
+    const downloadVideo = document.getElementById('downloadVideo').checked;
     
     document.getElementById('progress').style.display = 'block';
     document.getElementById('results').innerHTML = '';
@@ -36,12 +39,16 @@ document.getElementById('urlForm').addEventListener('submit', async (e) => {
         const response = await fetch('/extract-url', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({url: url})
+            body: JSON.stringify({
+                url: url, 
+                download_video: downloadVideo,
+                extract_audio: downloadAudio
+            })
         });
         
         if (response.ok) {
             const result = await response.json();
-            showResults(result);
+            showResults(result, downloadAudio);
         } else {
             throw new Error('Extraction failed');
         }
@@ -52,71 +59,117 @@ document.getElementById('urlForm').addEventListener('submit', async (e) => {
     }
 });
 
-function showResults(result) {
-    let html = '<h3>✅ Extraction Complete!</h3>';
+function toggleSubmitButton() {
+    const downloadAudio = document.getElementById('downloadAudio').checked;
+    const downloadVideo = document.getElementById('downloadVideo').checked;
+    const submitBtn = document.getElementById('urlSubmitBtn');
     
-    // Audio players section
-    html += '<div class="audio-player">';
-    html += '<h4>🎵 Stream & Preview</h4>';
-    html += '<div class="audio-controls">';
-    html += '<button class="play-all-btn" onclick="playAll()">▶️ Play All</button>';
-    html += '<button class="play-all-btn" onclick="stopAll()">⏹️ Stop All</button>';
-    html += '</div>';
+    submitBtn.disabled = !downloadAudio && !downloadVideo;
+}
+
+function showResults(result, hasAudioExtraction = true) {
+    console.log('Result:', result);
+    let html = '<h3>✅ Processing Complete!</h3>';
     
-    const trackLabels = {
-        'vocals': '🎤 Vocals Only',
-        'drums': '🥁 Drums Only', 
-        'bass': '🎸 Bass Only',
-        'other': '🎹 Other Instruments',
-        'pure_instrumental': '🎼 Pure Instrumental'
-    };
+    // Check if video was downloaded
+    const hasVideo = result.has_video;
+    const videoFiles = result.files.filter(file => 
+        file.endsWith('.mp4') || file.endsWith('.webm') || file.endsWith('.mkv') || file.endsWith('.avi')
+    );
+    const audioFiles = result.files.filter(file => 
+        !file.endsWith('.mp4') && !file.endsWith('.webm') && !file.endsWith('.mkv') && !file.endsWith('.avi')
+    );
     
-    for (const file of result.files) {
-        const trackType = Object.keys(trackLabels).find(key => file.includes(key)) || 'unknown';
-        const label = trackLabels[trackType] || file;
+    // Video player section (if video was downloaded)
+    if ((hasVideo && videoFiles.length > 0) || (hasVideo && result.files.some(f => f.includes('video')))) {
+        html += '<div class="video-player">';
+        html += '<h4>🎬 Downloaded Video</h4>';
         
-        html += `<div class="track-label">${label}</div>`;
-        html += `<audio controls preload="metadata" id="audio_${trackType}">`;
-        html += `<source src="/stream/${file}" type="audio/wav">`;
-        html += 'Your browser does not support the audio element.';
-        html += '</audio>';
+        const allVideoFiles = result.files.filter(file => 
+            file.includes('video') || file.endsWith('.mp4') || file.endsWith('.webm') || file.endsWith('.mkv') || file.endsWith('.avi')
+        );
+        
+        if (allVideoFiles.length > 0) {
+            for (const videoFile of allVideoFiles) {
+                html += `<video controls style="width: 100%; max-width: 640px; height: auto;">`;
+                html += `<source src="/stream/${videoFile}" type="video/mp4">`;
+                html += 'Your browser does not support the video element.';
+                html += '</video>';
+                html += `<br><a href="/download/${videoFile}" class="download-link">💾 Download ${videoFile}</a><br><br>`;
+            }
+        } else {
+            html += '<p>⚠️ Video download was requested but failed. Only audio was processed.</p>';
+        }
+        html += '</div>';
     }
-    html += '</div>';
     
-    // Mixer section
-    html += '<div class="mixer-section">';
-    html += '<h4>🎛️ Audio Mixer</h4>';
-    html += '<div class="mixer-control">';
-    html += '<label>🎤 Vocals:</label>';
-    html += '<input type="range" id="vocals-volume" min="0" max="200" value="100" oninput="updateMixer()">';
-    html += '<span id="vocals-value">100%</span>';
-    html += '</div>';
-    html += '<div class="mixer-control">';
-    html += '<label>🥁 Drums:</label>';
-    html += '<input type="range" id="drums-volume" min="0" max="200" value="100" oninput="updateMixer()">';
-    html += '<span id="drums-value">100%</span>';
-    html += '</div>';
-    html += '<div class="mixer-control">';
-    html += '<label>🎸 Bass:</label>';
-    html += '<input type="range" id="bass-volume" min="0" max="200" value="100" oninput="updateMixer()">';
-    html += '<span id="bass-value">100%</span>';
-    html += '</div>';
-    html += '<div class="mixer-control">';
-    html += '<label>🎹 Other:</label>';
-    html += '<input type="range" id="other-volume" min="0" max="200" value="100" oninput="updateMixer()">';
-    html += '<span id="other-value">100%</span>';
-    html += '</div>';
-    html += '<div class="mixer-buttons">';
-    html += '<button class="mixer-btn" onclick="resetMixer()">Reset</button>';
-    html += '<button class="mixer-btn" onclick="muteVocals()">Mute Vocals</button>';
-    html += '<button class="mixer-btn" onclick="soloInstruments()">Solo Instruments</button>';
-    html += '</div>';
-    html += '</div>';
-    
-    // Download section
-    html += '<h4>💾 Download Files</h4>';
-    for (const file of result.files) {
-        html += `<a href="/download/${file}" class="download-link">${file}</a>`;
+    // Only show audio sections if audio extraction was requested
+    if (hasAudioExtraction && audioFiles.length > 0) {
+        // Audio players section
+        html += '<div class="audio-player">';
+        html += '<h4>🎵 Stream & Preview</h4>';
+        html += '<div class="audio-controls">';
+        html += '<button class="play-all-btn" onclick="playAll()">▶️ Play All</button>';
+        html += '<button class="play-all-btn" onclick="stopAll()">⏹️ Stop All</button>';
+        html += '</div>';
+        
+        const trackLabels = {
+            'vocals': '🎤 Vocals Only',
+            'drums': '🥁 Drums Only', 
+            'bass': '🎸 Bass Only',
+            'other': '🎹 Other Instruments',
+            'pure_instrumental': '🎼 Pure Instrumental'
+        };
+        
+        for (const file of audioFiles) {
+            const trackType = Object.keys(trackLabels).find(key => file.includes(key)) || 'unknown';
+            const label = trackLabels[trackType] || file;
+            
+            html += `<div class="track-label">${label}</div>`;
+            html += `<audio controls preload="metadata" id="audio_${trackType}">`;
+            html += `<source src="/stream/${file}" type="audio/wav">`;
+            html += 'Your browser does not support the audio element.';
+            html += '</audio>';
+        }
+        html += '</div>';
+        
+        // Mixer section
+        html += '<div class="mixer-section">';
+        html += '<h4>🎛️ Audio Mixer</h4>';
+        html += '<div class="mixer-control">';
+        html += '<label>🎤 Vocals:</label>';
+        html += '<input type="range" id="vocals-volume" min="0" max="200" value="100" oninput="updateMixer()">';
+        html += '<span id="vocals-value">100%</span>';
+        html += '</div>';
+        html += '<div class="mixer-control">';
+        html += '<label>🥁 Drums:</label>';
+        html += '<input type="range" id="drums-volume" min="0" max="200" value="100" oninput="updateMixer()">';
+        html += '<span id="drums-value">100%</span>';
+        html += '</div>';
+        html += '<div class="mixer-control">';
+        html += '<label>🎸 Bass:</label>';
+        html += '<input type="range" id="bass-volume" min="0" max="200" value="100" oninput="updateMixer()">';
+        html += '<span id="bass-value">100%</span>';
+        html += '</div>';
+        html += '<div class="mixer-control">';
+        html += '<label>🎹 Other:</label>';
+        html += '<input type="range" id="other-volume" min="0" max="200" value="100" oninput="updateMixer()">';
+        html += '<span id="other-value">100%</span>';
+        html += '</div>';
+        html += '<div class="mixer-buttons">';
+        html += '<button class="mixer-btn" onclick="resetMixer()">Reset</button>';
+        html += '<button class="mixer-btn" onclick="muteVocals()">Mute Vocals</button>';
+        html += '<button class="mixer-btn" onclick="soloInstruments()">Solo Instruments</button>';
+        html += '</div>';
+        html += '</div>';
+        
+        // Download section
+        html += '<h4>💾 Download Audio Files</h4>';
+        for (const file of audioFiles) {
+            html += `<a href="/download/${file}" class="download-link">${file}</a>`;
+        }
+    } else if (!hasAudioExtraction) {
+        html += '<p>ℹ️ Audio extraction was not requested. Only video was downloaded.</p>';
     }
     
     document.getElementById('results').innerHTML = html;
@@ -178,4 +231,12 @@ function soloInstruments() {
     document.getElementById('bass-volume').value = 100;
     document.getElementById('other-volume').value = 100;
     updateMixer();
+}
+
+function cleanupAndRefresh() {
+    if (confirm('⚠️ This will delete all processed files and refresh the page. Continue?')) {
+        fetch('/cleanup', { method: 'POST' })
+            .then(() => location.reload())
+            .catch(err => console.error('Cleanup failed:', err));
+    }
 }

@@ -66,33 +66,76 @@ async def extract_file(file: UploadFile = File(...)):
 
 @app.post("/extract-url")
 async def extract_url(data: dict):
-    """Extract audio from YouTube URL"""
+    """Extract audio from YouTube URL with optional video download"""
     url = data.get("url")
+    download_video = data.get("download_video", False)
+    extract_audio = data.get("extract_audio", True)
+    
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
+    
+    # Validate at least one option is selected
+    if not extract_audio and not download_video:
+        raise HTTPException(status_code=400, detail="At least one option must be selected")
+    
+    # Prevent concurrent processing of same URL
+    import hashlib
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
     
     try:
         # Extract audio (run in thread pool)
         def run_extraction():
-            # Use controlled temp directory
-            temp_dir = str(OUTPUT_DIR / "temp")
+            # Use controlled temp directory with URL hash
+            temp_dir = str(OUTPUT_DIR / "temp" / url_hash)
             extractor = AIAudioExtractor(temp_dir=temp_dir)
-            # Download first, then separate
-            temp_audio = extractor.download_audio(url, str(OUTPUT_DIR))
-            results = extractor.separate_sources(temp_audio, str(OUTPUT_DIR))
             
-            # Clean up temp files immediately
-            if os.path.exists(temp_audio):
-                os.unlink(temp_audio)
+            response_files = []
             
-            return list(results.values())
+            # Download audio if requested
+            if extract_audio:
+                download_results = extractor.download_audio(url, str(OUTPUT_DIR), download_video, download_audio=True)
+                temp_audio = download_results['audio']
+                
+                # Separate audio sources
+                results = extractor.separate_sources(temp_audio, str(OUTPUT_DIR))
+                
+                # Clean up temp audio file
+                if os.path.exists(temp_audio):
+                    os.unlink(temp_audio)
+                
+                response_files.extend(list(results.values()))
+                
+                # Add video file if downloaded
+                if download_video and 'video' in download_results:
+                    video_file = download_results['video']
+                    if os.path.exists(video_file):
+                        video_name = f"video_{url_hash}{Path(video_file).suffix}"
+                        final_video_path = OUTPUT_DIR / video_name
+                        shutil.copy2(video_file, final_video_path)
+                        response_files.append(str(final_video_path))
+                        os.unlink(video_file)
+            
+            # Download only video (no audio extraction)
+            elif download_video:
+                download_results = extractor.download_audio(url, str(OUTPUT_DIR), download_video=True, download_audio=False)
+                
+                if 'video' in download_results:
+                    video_file = download_results['video']
+                    if os.path.exists(video_file):
+                        video_name = f"video_{url_hash}{Path(video_file).suffix}"
+                        final_video_path = OUTPUT_DIR / video_name
+                        shutil.copy2(video_file, final_video_path)
+                        response_files.append(str(final_video_path))
+                        os.unlink(video_file)
+            
+            return response_files
         
         output_files = await asyncio.to_thread(run_extraction)
         
         # Get just filenames for response
         file_names = [Path(f).name for f in output_files]
         
-        return {"status": "success", "files": file_names}
+        return {"status": "success", "files": file_names, "has_video": download_video}
     
     except Exception as e:
         error_msg = f"URL extraction error: {e}"
@@ -102,29 +145,54 @@ async def extract_url(data: dict):
 
 @app.get("/stream/{filename}")
 async def stream_file(filename: str):
-    """Stream audio file for in-browser playback"""
+    """Stream audio/video file for in-browser playback"""
     file_path = OUTPUT_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
+    # Determine media type based on file extension
+    file_ext = Path(filename).suffix.lower()
+    if file_ext in ['.mp4', '.webm', '.mkv', '.avi']:
+        media_type = 'video/mp4' if file_ext == '.mp4' else 'video/webm'
+    else:
+        media_type = 'audio/wav'
+    
     return FileResponse(
         path=file_path,
-        media_type='audio/wav',
+        media_type=media_type,
         headers={"Accept-Ranges": "bytes"}
     )
 
 @app.get("/download/{filename}")
 async def download_file(filename: str):
-    """Download extracted audio file"""
+    """Download extracted audio/video file"""
     file_path = OUTPUT_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
+    # Determine media type based on file extension
+    file_ext = Path(filename).suffix.lower()
+    if file_ext in ['.mp4', '.webm', '.mkv', '.avi']:
+        media_type = 'video/mp4' if file_ext == '.mp4' else 'video/webm'
+    else:
+        media_type = 'audio/wav'
+    
     return FileResponse(
         path=file_path,
         filename=filename,
-        media_type='audio/wav'
+        media_type=media_type
     )
+
+@app.post("/cleanup")
+async def cleanup():
+    """Clean up web_output folder"""
+    try:
+        if OUTPUT_DIR.exists():
+            shutil.rmtree(OUTPUT_DIR)
+            OUTPUT_DIR.mkdir(exist_ok=True)
+        return {"status": "success", "message": "Output folder cleaned"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

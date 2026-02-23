@@ -80,31 +80,76 @@ class AIAudioExtractor:
         if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
     
-    def download_audio(self, url: str, output_path: str) -> str:
-        """Download audio from YouTube/streaming platforms"""
+    def download_audio(self, url: str, output_path: str, download_video: bool = False, download_audio: bool = True) -> Dict[str, str]:
+        """Download audio (and optionally video) from YouTube/streaming platforms"""
+        import time
+        import threading
+        timestamp = int(time.time() * 1000)  # Use milliseconds for uniqueness
+        
         # Create consistent download directory
         download_dir = os.path.join(output_path, "downloads")
         os.makedirs(download_dir, exist_ok=True)
         
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': os.path.join(download_dir, 'downloaded_audio.%(ext)s'),
-            'noplaylist': True,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'wav',
-                'preferredquality': '192',
-            }],
-        }
+        results = {}
         
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
-                info = ydl.extract_info(url, download=True)
-                downloaded_file = os.path.join(download_dir, 'downloaded_audio.wav')
-                return downloaded_file
-        except Exception as e:
-            logger.error(f"Download failed: {e}")
-            raise
+        # Download audio only if requested
+        if download_audio:
+            audio_ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(download_dir, f'audio_{timestamp}.%(ext)s'),
+                'noplaylist': True,
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'wav',
+                    'preferredquality': '192',
+                }],
+            }
+            
+            try:
+                logger.info("Downloading audio...")
+                with yt_dlp.YoutubeDL(audio_ydl_opts) as ydl:  # type: ignore
+                    info = ydl.extract_info(url, download=True)
+                    audio_file = os.path.join(download_dir, f'audio_{timestamp}.wav')
+                    results['audio'] = audio_file
+                    
+                    # Store video info for later use
+                    video_title = info.get('title', 'Unknown')
+                    video_duration = info.get('duration', 0)
+                    logger.info(f"Downloaded audio: {video_title} ({video_duration}s)")
+                    
+            except Exception as e:
+                logger.error(f"Audio download failed: {e}")
+                raise
+        
+        # Download video if requested
+        if download_video:
+            logger.info("Downloading video...")
+            try:
+                video_ydl_opts = {
+                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                    'outtmpl': os.path.join(download_dir, f'video_{timestamp}.%(ext)s'),
+                    'noplaylist': True,
+                    'merge_output_format': 'mp4',
+                }
+                
+                with yt_dlp.YoutubeDL(video_ydl_opts) as ydl:  # type: ignore
+                    info = ydl.extract_info(url, download=True)
+                    # Find the actual downloaded file
+                    for ext in ['mp4', 'webm', 'mkv', 'avi']:
+                        video_file = os.path.join(download_dir, f'video_{timestamp}.{ext}')
+                        if os.path.exists(video_file):
+                            results['video'] = video_file
+                            logger.info(f"Downloaded video: {video_file}")
+                            break
+                    
+                    if 'video' not in results:
+                        logger.warning("Video download completed but file not found")
+                        
+            except Exception as video_error:
+                logger.error(f"Video download failed: {video_error}")
+                # Continue even if video fails
+        
+        return results
     
     def separate_sources(self, audio_path: str, output_dir: str, start_time: float = None, duration: float = None) -> Dict[str, str]:
         """Separate audio sources using AI"""
@@ -118,6 +163,14 @@ class AIAudioExtractor:
             # Ensure stereo and convert to torch tensor
             if y.ndim == 1:
                 y = np.stack([y, y])
+            
+            # Limit to 10 minutes max to prevent memory issues
+            max_duration = 600  # 10 minutes in seconds
+            max_samples = int(max_duration * sample_rate)
+            
+            if y.shape[1] > max_samples:
+                logger.warning(f"Audio too long ({y.shape[1]/sample_rate:.1f}s), limiting to {max_duration}s")
+                y = y[:, :max_samples]
             
             # Apply time limits if specified
             if start_time or duration:
@@ -194,12 +247,13 @@ class AIAudioExtractor:
 @click.option('--output', '-o', default='./output', help='Output directory')
 @click.option('--batch', '-b', help='Process multiple files from directory')
 @click.option('--url', '-u', help='Download and process from URL')
+@click.option('--download-video', '--video', is_flag=True, help='Also download video when processing URL')
 @click.option('--start-time', '-s', type=float, help='Start time in seconds')
 @click.option('--duration', '-d', type=float, help='Duration in seconds')
 @click.option('--model', '-m', default='htdemucs', 
               type=click.Choice(['htdemucs', 'htdemucs_ft', 'mdx_extra']),
               help='AI model to use')
-def main(input, output, batch, url, start_time, duration, model):
+def main(input, output, batch, url, download_video, start_time, duration, model):
     """AI-powered Audio Source Separation"""
     
     extractor = AIAudioExtractor(model)
@@ -207,8 +261,12 @@ def main(input, output, batch, url, start_time, duration, model):
     try:
         if url:
             logger.info(f"Downloading from URL: {url}")
-            temp_audio = extractor.download_audio(url, extractor.temp_dir)
-            input = temp_audio
+            download_results = extractor.download_audio(url, extractor.temp_dir, download_video)
+            input = download_results['audio']
+            
+            # Log video download if it happened
+            if download_video and 'video' in download_results:
+                logger.info(f"Video also downloaded: {download_results['video']}")
         
         if batch:
             audio_files = []

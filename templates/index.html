@@ -7,6 +7,7 @@
 <body>
     <h1>🎵 StayTuned Audio Extractor</h1>
     <p>Extract vocals, drums, bass, and instruments from your audio files using AI</p>
+    <button id="refreshBtn" class="refresh-btn" onclick="cleanupAndRefresh()">🔄 Refresh & Clean</button>
     
     <div class="upload-area">
         <h3>Upload Audio File</h3>
@@ -20,9 +21,22 @@
     <div class="upload-area">
         <h3>Extract from YouTube URL</h3>
         <form id="urlForm">
-            <input type="url" id="youtubeUrl" placeholder="https://youtube.com/watch?v=..." style="width: 400px; padding: 8px;">
+            <input type="url" id="youtubeUrl" placeholder="https://youtube.com/watch?v=..." style="width: 400px; padding: 8px;" required>
             <br><br>
-            <button type="submit">Extract from URL</button>
+            <div class="download-options">
+                <p style="font-weight: bold; margin-bottom: 10px;">Select what to download:</p>
+                <label class="option-label">
+                    <input type="checkbox" id="downloadAudio" checked onchange="toggleSubmitButton()"> 
+                    <span class="option-text">🎵 Extract Audio (AI Separation)</span>
+                </label>
+                <label class="option-label">
+                    <input type="checkbox" id="downloadVideo" onchange="toggleSubmitButton()"> 
+                    <span class="option-text">🎬 Download Video File</span>
+                </label>
+                <p class="option-note">Note: At least one option must be selected</p>
+            </div>
+            <br>
+            <button type="submit" id="urlSubmitBtn">Process URL</button>
         </form>
     </div>
 

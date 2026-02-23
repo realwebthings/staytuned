@@ -12,3 +12,4 @@ logs/
 *.ogg
 *.zip
 *.tar.gz
+web_output/

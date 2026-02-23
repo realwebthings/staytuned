@@ -21,6 +21,7 @@ python3 ai_extractor.py -u "https://youtube.com/watch?v=..." -o ./output
 
 - **Web Interface**: Easy-to-use browser interface with drag & drop
 - **Multi-source Support**: Local files, YouTube, streaming URLs
+- **Video Download**: Optional video download from YouTube and other platforms
 - **Advanced Controls**: Vocal reduction strength, frequency filtering
 - **Multiple Output Formats**: 6 different extraction methods
 - **Batch Processing**: Process multiple files simultaneously
@@ -43,8 +44,11 @@ pip install -r requirements.txt
 # Basic AI separation
 python3 ai_extractor.py -i "song.mp3" -o "./output"
 
-# From YouTube
+# From YouTube (audio only)
 python3 ai_extractor.py -u "https://youtube.com/watch?v=..." -o "./output"
+
+# From YouTube with video download
+python3 ai_extractor.py -u "https://youtube.com/watch?v=..." --download-video -o "./output"
 
 # Extract 30 seconds starting from 1 minute
 python3 ai_extractor.py -i "song.mp3" -o "./output" -s 60 -d 30
