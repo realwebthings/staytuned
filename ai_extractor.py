@@ -98,6 +98,7 @@ class AIAudioExtractor:
                 'format': 'bestaudio/best',
                 'outtmpl': os.path.join(download_dir, f'audio_{timestamp}.%(ext)s'),
                 'noplaylist': True,
+                'age_limit': 21,  # Bypass age restriction
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'wav',
@@ -130,6 +131,7 @@ class AIAudioExtractor:
                     'outtmpl': os.path.join(download_dir, f'video_{timestamp}.%(ext)s'),
                     'noplaylist': True,
                     'merge_output_format': 'mp4',
+                    'age_limit': 21,  # Bypass age restriction
                 }
                 
                 with yt_dlp.YoutubeDL(video_ydl_opts) as ydl:  # type: ignore
